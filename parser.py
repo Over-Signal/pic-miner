@@ -83,8 +83,14 @@ class parser:
 
         return url_data
 
-    def file_save(self, target:list):
-        save_dir = './asset/k2/'
+    def file_save(self, target:list, dir:str):
+        save_dir = dir
+
+        with open('./asset/k2/marker.txt', 'r', encoding='utf-8') as t:
+            data = t.readlines()
+
+        start_num = int(data[0].split('=')[1])
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
@@ -96,7 +102,7 @@ class parser:
                 # 요청 성공 시 (상태코드 200) 저장
                 if response.status_code == 200:
                     # 파일 경로 및 이름 설정 (예: downloaded_images/image_0.jpg)
-                    file_path = os.path.join(save_dir, f'image_{i}.jpg')
+                    file_path = os.path.join(save_dir, f'image_{start_num + i}.jpg')
                     
                     # 'wb'는 바이너리 쓰기 모드 (이미지, 동영상 등)
                     with open(file_path, 'wb') as f:
@@ -109,7 +115,11 @@ class parser:
             except Exception as e:
                 print(f'{i}번째 에러 발생: {e}')
 
+        with open('./asset/k2/marker.txt', 'w', encoding='utf-8') as t:
+            save_num = start_num + len(target)
+            t.write(f'num={save_num}')
+
 if __name__ == "__main__":
     p = parser()
     data = p.naver_parse('https://search.naver.com/search.naver?ssc=tab.image.all&where=image&sm=tab_jum&query=k2+%ED%9D%91%ED%91%9C')
-    p.file_save(data)
+    p.file_save(data, './asset/k2/')
