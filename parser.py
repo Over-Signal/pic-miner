@@ -1,15 +1,18 @@
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 import time
 import random
 import requests
 import os
+import json
 
 class parser:
     def __init__(self):
         self.driver = webdriver.Chrome()
 
-    def human_scroll(self):
+    def human_scroll_naver(self, portal:str):
+        img_counter = 0
         last_height = self.driver.execute_script("return document.body.scrollHeight")
     
     # 멈춘 횟수를 카운트하는 변수
@@ -43,18 +46,21 @@ class parser:
                 # 높이를 다시 갱신해서 확인
                 new_height = self.driver.execute_script("return document.body.scrollHeight")
                 
+                if portal == 'bing' and retries == 2 and img_counter == 0:
+                    element = self.driver.find_element(By.CSS_SELECTOR, '#bop_container > div.mm_seemore > a')
+                    self.driver.execute_script(f"arguments[{img_counter}].click();", element)
+                    img_counter+=1
+
                 # 여전히 안 변했고, 재시도 횟수가 찼다면 종료
                 if new_height == last_height and retries >= max_retries:
                     print("더 이상 불러올 이미지가 없습니다. 스크롤 종료.")
                     break
+                
+
             else:
                 # 높이가 변했다면(새 이미지가 로딩됨) 카운트 초기화 및 계속 진행
                 retries = 0 
                 last_height = new_height
-
-            
-            with open('sample.txt', 'w', encoding='utf-8') as t:
-                        t.write(str(self.driver.page_source))
     
     def naver_parse(self, url) -> list:
         '''
@@ -65,7 +71,7 @@ class parser:
         url_data = []
         self.driver.get(url)
 
-        self.human_scroll()
+        self.human_scroll_naver('naver')
 
         soup = BeautifulSoup(self.driver.page_source,'html.parser')
 
@@ -82,6 +88,23 @@ class parser:
                 print(f'{i}번째 데이터 손실')
 
         return url_data
+    
+    def bing_parse(self, url) -> list:
+        self.driver.get(url)
+
+        self.human_scroll_naver('bing')
+
+        soup = BeautifulSoup(self.driver.page_source,'html.parser')
+        #soup = BeautifulSoup(requests.get(url).text,'html.parser')
+
+        img_url=[]
+        url_data = soup.find_all('div',{'class':'imgpt'})
+        for data in url_data:
+            tag_a = data.select_one('a')
+            img_json = json.loads(tag_a['m'])
+            #print(img_json['murl'])
+            img_url.append(img_json['murl'])
+        return img_url
 
     def file_save(self, target:list, dir:str):
         save_dir = dir
@@ -121,5 +144,6 @@ class parser:
 
 if __name__ == "__main__":
     p = parser()
-    data = p.naver_parse('https://search.naver.com/search.naver?ssc=tab.image.all&where=image&sm=tab_jum&query=k2+%ED%9D%91%ED%91%9C')
+    data = p.naver_parse('https://search.naver.com/search.naver?ssc=tab.image.all&where=image&query=k1%EC%A0%84%EC%B0%A8+-%EC%A0%9C%EC%9E%91+-%EB%AA%A8%EB%8D%B8+-1%2F+-1%3A+-%EB%AA%A8%ED%98%95&sm=tab_dgs&qdt=1')
+    #data = p.bing_parse('https://www.bing.com/images/search?q=K2+%ED%9D%91%ED%91%9C+%EC%A0%84%EC%B0%A8&form=QBIR&first=1&cw=2127&ch=1559')
     p.file_save(data, './asset/k2/')
