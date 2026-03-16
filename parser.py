@@ -2,6 +2,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
+import queue
+import aiohttp
+import aiofiles
+import asyncio
 import time
 import random
 import requests
@@ -11,6 +15,9 @@ import json
 class parser:
     def __init__(self):
         self.driver = webdriver.Chrome()
+        self.url_queue = queue.Queue()
+
+        self.runningFlag=True
 
     def human_scroll_naver(self, portal:str):
         img_counter = 0
@@ -110,34 +117,25 @@ class parser:
     
     def bing_specific_parse(self, url) -> list:
         self.driver.get(url)
-        time.sleep(2)
+        time.sleep(1.5)
 
         #self.human_scroll_naver('bing')
 
-        body = self.driver.find_element(By.XPATH, '/html/body')
-        body.click()
+        body = self.driver.find_element(By.CSS_SELECTOR, '#detailCanvas')
+        #body.click()
 
         body.send_keys(Keys.PAGE_DOWN)
         time.sleep(1)
         body.send_keys(Keys.PAGE_DOWN)
         time.sleep(1.5)
 
-        self.driver.find_element(By.XPATH, '//*[@id="detailCanvas"]/div[2]/div/ul/li[1]/div/div[2]/div/div').click()
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1)
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1.5)
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1.5)
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1.5)
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1.5)
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1.5)
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(1.5)
-
+        try:
+            self.driver.find_element(By.XPATH, '//*[@id="detailCanvas"]/div[2]/div/ul/li[1]/div/div[2]/div/div').click()
+        except:
+            print('이미지 더보기 버튼 없음')
+        for _ in range(20):
+            body.send_keys(Keys.PAGE_DOWN)
+            time.sleep(random.uniform(0.5,2.5))
 
         soup = BeautifulSoup(self.driver.page_source,'html.parser')
         #soup = BeautifulSoup(requests.get(url).text,'html.parser')
@@ -187,13 +185,54 @@ class parser:
             save_num = start_num + len(target)
             t.write(f'num={save_num}')
 
+    async def download_image(self, session, url, file_name, semaphore):
+        async with semaphore:
+            try:
+                timeout = aiohttp.ClientTimeout(total=7)
+                async with session.get(url, timeout=timeout) as response:
+                    if response.status == 200:
+                        async with aiofiles.open(file_name, mode='wb') as f:
+                            await f.write(await response.read())
+                        print(f"[성공] {file_name} 다운로드 완료")
+                    else:
+                        print(f"[실패] {url} - 상태 코드: {response.status}")
+            except Exception as e:
+                print(f"[에러] {url} - {e}")
+
+    async def download_all_images(self, url_list, save_dir):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        with open(f'{save_dir}marker.txt', 'r', encoding='utf-8') as t:
+            data = t.readlines()
+
+        start_num = int(data[0].split('=')[1])
+
+        semaphore = asyncio.Semaphore(50) 
+        
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for idx, url in enumerate(url_list):
+                file_name = os.path.join(save_dir, f"image_{start_num+idx}.jpg")
+                
+                task = asyncio.create_task(self.download_image(session, url, file_name, semaphore))
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+
+        with open(f'{save_dir}marker.txt', 'w', encoding='utf-8') as t:
+            save_num = start_num + len(url_list)
+            t.write(f'num={save_num}')
+
 if __name__ == "__main__":
     p = parser()
+    total_url_list = []
     #data = p.naver_parse('https://search.naver.com/search.naver?ssc=tab.image.all&where=image&query=k1%EC%A0%84%EC%B0%A8+-%EC%A0%9C%EC%9E%91+-%EB%AA%A8%EB%8D%B8+-1%2F+-1%3A+-%EB%AA%A8%ED%98%95&sm=tab_dgs&qdt=1')
     data, specific_url = p.bing_parse('https://www.bing.com/images/search?q=K2+%ED%9D%91%ED%91%9C+%EC%A0%84%EC%B0%A8&form=QBIR&first=1&cw=2127&ch=1559')
-    p.file_save(data, './asset/k2/')
-    for spec in specific_url:
+    asyncio.run(p.download_all_images(data, './asset/k2/'))
+    length_url=len(specific_url)
+    for i, spec in enumerate(specific_url):
         res_list = p.bing_specific_parse(spec)
-        p.file_save(res_list, './asset/k2/')
+        asyncio.run(p.download_all_images(res_list, './asset/k2/'))
+        print(f'{i}/{length_url}')
     #p.bing_specific_parse('https://www.bing.com/images/search?view=detailV2&ccid=SxPxzpRZ&id=FE5C78B4C6359AF8C0BF1121972B80DD0CD476EC&thid=OIP.SxPxzpRZHbY7IAVH1tea0AHaDn&mediaurl=https%3A%2F%2Fimg.hankyung.com%2Fphoto%2F202206%2FAA.30387090.1.jpg&exph=303&expw=620&q=k2+%EC%A0%84%EC%B0%A8&FORM=IRPRST&ck=832CD9BE63BB9BD87FE335959BBFE2B4&selectedIndex=3&itb=0&cw=1895&ch=1418&ajaxhist=0&ajaxserp=0')
     #p.file_save(data, './asset/k2/')
