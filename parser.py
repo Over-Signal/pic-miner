@@ -1,6 +1,9 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
 from bs4 import BeautifulSoup
 import queue
 import aiohttp
@@ -11,10 +14,13 @@ import random
 import requests
 import os
 import json
+import threading
 
 class parser:
     def __init__(self):
-        self.driver = webdriver.Chrome()
+        options = Options()
+        options.add_argument('window-size=1200,1000')
+        self.driver = webdriver.Chrome(options=options)
         self.url_queue = queue.Queue()
 
         self.runningFlag=True
@@ -133,9 +139,9 @@ class parser:
             self.driver.find_element(By.XPATH, '//*[@id="detailCanvas"]/div[2]/div/ul/li[1]/div/div[2]/div/div').click()
         except:
             print('이미지 더보기 버튼 없음')
-        for _ in range(20):
+        for _ in range(15):
             body.send_keys(Keys.PAGE_DOWN)
-            time.sleep(random.uniform(0.5,2.5))
+            time.sleep(random.uniform(0.3,0.5))
 
         soup = BeautifulSoup(self.driver.page_source,'html.parser')
         #soup = BeautifulSoup(requests.get(url).text,'html.parser')
@@ -223,16 +229,35 @@ class parser:
             save_num = start_num + len(url_list)
             t.write(f'num={save_num}')
 
+    def thread_handler(self):
+        while self.runningFlag:
+            if not self.url_queue.empty():
+                url_list = self.url_queue.get()
+                #print(url_list)
+            else:
+                time.sleep(0.01)
+                continue
+            
+            asyncio.run(self.download_all_images(url_list, './asset/k2/'))
+    
+    def run_thread(self):
+        save_thread = threading.Thread(target=self.thread_handler, daemon=True)
+        save_thread.start()
+
 if __name__ == "__main__":
     p = parser()
     total_url_list = []
     #data = p.naver_parse('https://search.naver.com/search.naver?ssc=tab.image.all&where=image&query=k1%EC%A0%84%EC%B0%A8+-%EC%A0%9C%EC%9E%91+-%EB%AA%A8%EB%8D%B8+-1%2F+-1%3A+-%EB%AA%A8%ED%98%95&sm=tab_dgs&qdt=1')
     data, specific_url = p.bing_parse('https://www.bing.com/images/search?q=K2+%ED%9D%91%ED%91%9C+%EC%A0%84%EC%B0%A8&form=QBIR&first=1&cw=2127&ch=1559')
-    asyncio.run(p.download_all_images(data, './asset/k2/'))
+    p.run_thread()
+    p.url_queue.put(data)
+    # asyncio.run(p.download_all_images(data, './asset/k2/'))
     length_url=len(specific_url)
     for i, spec in enumerate(specific_url):
         res_list = p.bing_specific_parse(spec)
-        asyncio.run(p.download_all_images(res_list, './asset/k2/'))
+        p.url_queue.put(res_list)
         print(f'{i}/{length_url}')
-    #p.bing_specific_parse('https://www.bing.com/images/search?view=detailV2&ccid=SxPxzpRZ&id=FE5C78B4C6359AF8C0BF1121972B80DD0CD476EC&thid=OIP.SxPxzpRZHbY7IAVH1tea0AHaDn&mediaurl=https%3A%2F%2Fimg.hankyung.com%2Fphoto%2F202206%2FAA.30387090.1.jpg&exph=303&expw=620&q=k2+%EC%A0%84%EC%B0%A8&FORM=IRPRST&ck=832CD9BE63BB9BD87FE335959BBFE2B4&selectedIndex=3&itb=0&cw=1895&ch=1418&ajaxhist=0&ajaxserp=0')
+    
+    
+    # p.bing_specific_parse('https://www.bing.com/images/search?view=detailV2&ccid=SxPxzpRZ&id=FE5C78B4C6359AF8C0BF1121972B80DD0CD476EC&thid=OIP.SxPxzpRZHbY7IAVH1tea0AHaDn&mediaurl=https%3A%2F%2Fimg.hankyung.com%2Fphoto%2F202206%2FAA.30387090.1.jpg&exph=303&expw=620&q=k2+%EC%A0%84%EC%B0%A8&FORM=IRPRST&ck=832CD9BE63BB9BD87FE335959BBFE2B4&selectedIndex=3&itb=0&cw=1895&ch=1418&ajaxhist=0&ajaxserp=0')
     #p.file_save(data, './asset/k2/')
